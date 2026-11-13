@@ -82,6 +82,11 @@ form.find input{flex:1}
 .part .pn{font-size:.95rem;min-width:0}
 .ex{border-left:3px solid var(--marker);padding-left:12px}
 .ex small{display:block;color:var(--muted);font-size:.9rem}
+.ex .say{float:right;margin-left:8px}
+img.gw{height:1.15em;width:1.15em;vertical-align:-.2em}
+@media (prefers-color-scheme: dark){ img.gw{filter:invert(1)} }
+.langs{display:flex;gap:6px;align-items:center;flex-wrap:wrap;font-size:.85rem;color:var(--muted)}
+.langs button[aria-checked=true]{background:var(--accent);border-color:var(--accent);color:var(--on-accent);font-weight:700}
 .pic{background:var(--pic-bg);border-radius:12px;overflow:hidden;border:1px solid var(--line)}
 .pic img{display:block;width:100%;height:auto}
 .photos{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px}
@@ -121,10 +126,16 @@ details.set summary{font-weight:700;cursor:pointer}
       <label class="btn side">앨범에서<input type="file" id="pick" accept="image/*"></label>
     </div>
     <form class="find" id="form">
-      <input id="q" type="text" autocomplete="off" autocapitalize="off" placeholder="단어를 쓰거나 말하기" aria-label="찾을 단어">
+      <input id="q" type="text" autocomplete="off" autocapitalize="off" placeholder="단어 · word · 単語" aria-label="찾을 단어">
       <button type="button" class="btn" id="mic" hidden aria-pressed="false">말하기</button>
       <button type="submit" class="btn">찾기</button>
     </form>
+    <div class="langs" id="langs" role="radiogroup" aria-label="읽는 책의 언어">
+      <span>읽는 책</span>
+      <button type="button" class="btn small" role="radio" data-v="ko-KR">한국어</button>
+      <button type="button" class="btn small" role="radio" data-v="en-US">English</button>
+      <button type="button" class="btn small" role="radio" data-v="ja-JP">日本語</button>
+    </div>
     <p class="status" id="status" role="status"></p>
   </section>
 
@@ -156,9 +167,6 @@ details.set summary{font-weight:700;cursor:pointer}
         <button type="button" class="btn" id="saveKey">저장하고 확인</button>
       </div>
       <p class="status" id="keyNote"></p>
-      <label>말하기 언어
-        <select id="speechLang"><option value="ko-KR">한국어</option><option value="en-US">English</option><option value="ja-JP">日本語</option></select>
-      </label>
       <p class="status">키는 이 기기에만 저장되고, 단어를 찾을 때 Google로만 전송됩니다. 무료 키로 보낸 내용은 Google이 서비스 개선에 쓸 수 있으니 개인적인 문서는 찍지 마세요.</p>
     </div>
   </details>
@@ -177,9 +185,53 @@ function h(tag, attrs, ...kids){
   }
   for (const c of kids.flat()) {
     if (c == null || c === false || c === "") continue;
-    e.append(c.nodeType ? c : document.createTextNode(String(c)));
+    if (c.nodeType) e.append(c);
+    else if (RARE.test(String(c))) e.append(...rareSafe(String(c)));
+    else e.append(document.createTextNode(String(c)));
   }
   return e;
+}
+/* 드문 한자(流의 㐬·𠫓 같은 옛 구성 요소)는 폰 글꼴에 모양이 없어 X 상자로 나온다.
+   그런 글자만 골라, 모든 한자의 모양을 그림으로 주는 GlyphWiki의 글자 그림으로 바꿔 보여 준다.
+   '없는 글자'는 캔버스에 그려 보고, 확실히 없는 글자(미배정 코드)를 그린 모양과 같으면 없는 것으로 판단한다. */
+const RARE = /[⺀-⿟㇀-㇯㐀-䶿\u{20000}-\u{3FFFF}]/u;
+const RARE_G = new RegExp(RARE.source, "gu");
+const glyphOK = (() => {
+  const ok = new Set(); let cx = null, tofu = null;
+  const shot = ch => {
+    cx.clearRect(0, 0, 32, 32); cx.fillText(ch, 16, 16);
+    const d = cx.getImageData(0, 0, 32, 32).data; let s = "";
+    for (let i = 3; i < d.length; i += 4) s += d[i] > 64 ? "1" : "0";
+    return s;
+  };
+  return ch => {
+    if (ok.has(ch)) return true;
+    try {
+      if (!cx) {
+        const cv = document.createElement("canvas"); cv.width = cv.height = 32;
+        cx = cv.getContext("2d", {willReadFrequently: true});
+        cx.font = "24px " + getComputedStyle(document.body).fontFamily;
+        cx.textAlign = "center"; cx.textBaseline = "middle";
+        tofu = new Set(["͸", "\u{2FFFD}", "\u{3FFFD}"].map(shot));
+      }
+      const good = !tofu.has(shot(ch));
+      if (good) ok.add(ch); else document.fonts?.load(cx.font, ch).catch(() => {});   // 웹 글꼴 조각에 있으면 다음 번엔 보인다
+      return good;
+    } catch (_) { return ch.codePointAt(0) < 0x20000; }
+  };
+})();
+function rareSafe(s){
+  const out = []; let last = 0;
+  for (const m of s.matchAll(RARE_G)) {
+    if (glyphOK(m[0])) continue;
+    if (m.index > last) out.push(document.createTextNode(s.slice(last, m.index)));
+    const img = document.createElement("img");
+    img.className = "gw"; img.alt = m[0]; img.loading = "lazy";
+    img.src = "https://glyphwiki.org/glyph/u" + m[0].codePointAt(0).toString(16) + ".svg";
+    out.push(img); last = m.index + m[0].length;
+  }
+  if (last < s.length) out.push(document.createTextNode(s.slice(last)));
+  return out;
 }
 const ls = {
   get(k, d){ try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (_) { return d; } },
@@ -188,6 +240,22 @@ const ls = {
 
 /* ---------- 상태 ---------- */
 let words = ls.get("dd.words", []), found = [], shown = null;
+let bookLang = ls.get("dd.speechLang", "ko-KR");      // 지금 읽는 책의 언어: 말하기 인식과, 한자만으로 된 말을 어느 나라 말로 풀지에 쓴다
+const LANG_NAME = {"ko-KR": "한국어", "en-US": "영어", "ja-JP": "일본어"};
+/* 풀이가 알려 준 언어를 쓰고, 없으면 글자 종류로 가린다(가나가 있으면 일본어, 로마자면 영어). */
+function langOf(rec){
+  const l = ((rec.lines || []).find(x => x.t === "head") || {}).lang;
+  if (l === "ko" || l === "en" || l === "ja") return l;
+  if (/[぀-ヿ]/.test(rec.word)) return "ja";
+  return /^[\x20-\x7EÀ-ɏ]+$/.test(rec.word) ? "en" : "ko";
+}
+/* 발음 듣기: 기기에 내장된 음성 합성을 쓴다. 키도 한도도 쓰지 않는다. */
+function speak(text, lang){
+  if (!window.speechSynthesis) return;
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = {ko: "ko-KR", en: "en-US", ja: "ja-JP"}[lang] || "ko-KR"; u.rate = 0.9;
+  speechSynthesis.cancel(); speechSynthesis.speak(u);
+}
 const C = {};                                   // 종류별 진행 중인 호출: s=사진, d=풀이, p=그림
 function begin(kind){ C[kind]?.abort(); return (C[kind] = new AbortController()); }
 function say(msg, err){ const s = $("status"); s.textContent = msg || ""; s.classList.toggle("err", !!err); }
@@ -310,7 +378,7 @@ function idFor(word){
 /* ---------- 프롬프트 ---------- */
 const SCAN_PROMPT = `이 사진은 독자가 읽던 책의 한 페이지 또는 그 일부다. 사진 속 글에서 독자가 뜻을 몰라 막혔을 만한 단어를 골라라.
 - 한국어 글: 한국 성인 독자가 뜻을 정확히 설명하기 어려운 단어(어려운 한자어, 전문용어, 옛말, 낯선 외래어, 드문 표현, 사자성어).
-- 외국어 글: 중급 학습자가 모를 만한 단어와 숙어.
+- 영어·일본어 등 외국어 글: 한국인 중급 학습자가 모를 만한 단어와 숙어·구동사. 일본어는 r에 히라가나 읽기를 꼭 쓴다.
 - 누구나 아는 기본 단어, 조사, 사람 이름은 뺀다. 사진에 단어가 몇 개만 크게 찍혔으면 그 단어들은 기본 단어라도 넣는다.
 어려운 것부터 최대 20개. 한 줄에 JSON 객체 하나씩만 출력하고 다른 글이나 코드펜스는 쓰지 않는다:
 {"w":"사전에 실리는 기본형","r":"읽는 법(한자·일본어 표기일 때만, 아니면 빈 문자열)","g":"이 문맥에서의 뜻, 한국어 15자 이내","c":"그 단어가 들어 있는 문장, 60자 이내"}
@@ -320,20 +388,25 @@ function detailPrompt(word, ctx){
   return `너는 책을 읽다가 모르는 단어를 만난 독자를 돕는 사전이다. 독자는 한국인 성인이고 한자·영어·일본어를 공부하고 있다. 설명은 한국어로, 사실만 쓴다. 어원이나 자원(字源)이 확실하지 않으면 지어내지 말고 "확실하지 않음"이라고 쓴다.
 
 단어: «${word}»
+독자가 지금 읽는 책의 언어: ${LANG_NAME[bookLang] || "한국어"}. 단어가 그 언어의 말이면 그 언어의 단어로 풀이한다(한자만으로 된 말은 이 언어의 읽기와 쓰임을 기준으로 한다). 분명히 다른 언어의 말이면 그 언어로 풀이한다.
 ${ctx ? "책에 나온 문장: «" + ctx + "»" : "문맥 없음: 가장 흔한 뜻으로 풀이하고, 뜻이 여럿이면 mean에서 나눠 설명한다."}
 
 한 줄에 JSON 객체 하나씩, 아래 순서로만 출력한다. 각 객체는 반드시 한 줄에 쓴다. 코드펜스나 다른 글은 쓰지 않는다.
-{"t":"head","word":"표제어(한자어면 한글과 한자를 함께, 예: 원리 原理)","reading":"발음 또는 읽는 법(영어는 발음기호, 일본어는 히라가나)","pos":"품사","gloss":"한 줄 뜻","en":"영어 대응어","ja":"일본어 대응어(읽는 법)"}
+{"t":"head","lang":"단어의 언어: ko, en, ja 중 하나(그 밖의 언어는 xx)","word":"표제어. 한국어 한자어면 한글과 한자를 함께(예: 원리 原理), 영어·일본어면 사전에 실리는 기본형 그대로(예: benevolent, 召し上がる)","reading":"읽는 법. 영어는 발음기호와 한글로 적은 가까운 소리(예: /bəˈnevələnt/ 버네벌런트), 일본어는 히라가나","pos":"품사(일본어 동사는 1그룹·2그룹·3그룹, 형용사는 い·な 구분까지)","gloss":"한국어로 한 줄 뜻","en":"영어 대응어","ja":"일본어 대응어(읽는 법)"}
 {"t":"mean","text":"뜻을 2~3문장으로. 문맥이 있으면 그 문장에서 무슨 뜻인지."}
 {"t":"part","piece":"조각","reading":"읽기","sense":"조각의 뜻","note":"설명"}  ← 조각마다 한 줄
 {"t":"origin","text":"조각들의 뜻이 어떻게 합쳐져 지금의 뜻이 되었는지, 왜 그런지 1~3문장"}
-{"t":"ex","src":"예문","ko":"예문이 외국어면 한국어 번역, 아니면 빈 문자열"}  ← 2줄
+{"t":"use","text":"외국어 단어일 때만 쓰는 줄. 말맛(격식·구어·문어, 공손함의 정도), 자주 함께 쓰는 말 2~3개, 불규칙 활용이나 한국인이 자주 틀리는 점을 2~3문장으로. 한국어 단어면 이 줄을 생략한다."}
+{"t":"ex","src":"그 단어의 언어로 쓴 예문","r":"예문이 일본어면 예문 전체를 히라가나로 읽은 것, 아니면 빈 문자열","ko":"예문이 외국어면 한국어 번역, 아니면 빈 문자열"}  ← 2줄
 {"t":"rel","items":["비슷한말·반대말·헷갈리는 말 3~5개, 각각 짧은 구분 설명 포함"]}
-{"t":"img","q":"이 단어가 가리키는 것을 이미지 검색으로 찾기 좋은 검색어","wiki":"눈으로 볼 수 있는 사물·생물·장소·인물·도구일 때만 그것을 다루는 한국어 위키백과 문서 제목, 추상적인 말이면 빈 문자열","wiki_en":"같은 조건의 영어 위키백과 문서 제목, 아니면 빈 문자열"}
+{"t":"img","q":"이 단어가 가리키는 것을 이미지 검색으로 찾기 좋은 검색어","wiki":"눈으로 볼 수 있는 사물·생물·장소·인물·도구일 때만 그것을 다루는 한국어 위키백과 문서 제목, 추상적인 말이면 빈 문자열","wiki_en":"같은 조건의 영어 위키백과 문서 제목, 아니면 빈 문자열","wiki_ja":"일본어 단어일 때만, 같은 조건의 일본어 위키백과 문서 제목, 아니면 빈 문자열"}
 
 part 규칙:
 - 한자로 쓸 수 있는 말(한국어 한자어, 일본어, 중국어): 한자 한 글자마다 part 한 줄. piece=한자 한 글자, reading="한국어 훈음(예: 근원 원) · 일본어 음독/훈독", sense=핵심 뜻, note=부수와 글자 구성 원리(어떤 요소가 합쳐져 왜 그 뜻이 되는지) 한 문장.
+- 일본어에서 한자와 가나가 섞인 말(예: 召し上がる, 取り扱い): 한자는 위와 같이 한 글자씩 쓰되 reading에 이 단어에서 실제로 읽히는 소리를 먼저 적는다. 뒤따르는 가나(오쿠리가나·활용 어미·조사)는 묶어서 part 한 줄, sense에 문법상 하는 일을 쓴다.
+- 가타카나 외래어(예: アルバイト): part 한 줄. piece=원래 말(예: Arbeit), reading=어느 나라 말인지, sense=원래 뜻, note=일본어에서 뜻이 어떻게 달라졌는지.
 - 영어 등 서양 말: 접두사·어근·접미사마다 part 한 줄. piece=조각(예: bene-), reading=유래(예: 라틴어 bene), sense=뜻, note=같은 조각을 쓰는 다른 단어 2~3개와 뜻.
+- 숙어·구동사(예: put up with): 단어마다 part 한 줄, origin에 왜 그 조합이 그 뜻이 되는지 쓴다.
 - 더 쪼갤 수 없는 고유어·단순어: part를 생략하고 origin에 어원을 쓴다.
 en, ja는 표제어가 이미 그 언어면 빈 문자열.
 글자 규칙: 한자와 부수는 폰에서 깨지지 않도록 일상적으로 쓰는 글자만 쓴다. 갑골문·금문에만 있는 옛 글자, 유니코드 확장 영역의 드문 글자, 부수 전용 기호는 쓰지 말고 "손을 뻗은 모양"처럼 말로 풀어 쓰거나 가장 가까운 흔한 한자로 대신한다.`;
@@ -407,7 +480,9 @@ async function lookup(word, ctx, opt){
 /* 실제 사진은 위키백과에서 가져온다. 키도 한도도 필요 없고, 풀이가 '눈에 보이는 것'이라고 판단한 단어에만 붙는다. */
 async function photos(rec){
   const img = rec.lines.find(l => l.t === "img") || {};
-  const tries = [["ko", img.wiki], ["en", img.wiki_en]].filter(t => t[1]);
+  const lg = langOf(rec);
+  const all = [["ko", img.wiki], ["en", img.wiki_en], ["ja", img.wiki_ja]];
+  const tries = [...all.filter(t => t[0] === lg), ...all.filter(t => t[0] !== lg)].filter(t => t[1]);
   for (const [lang, title] of tries) {
     try {
       // '검색'은 비슷한 글자의 엉뚱한 문서(염해 → 염해인)를 돌려주므로, 제목이 정확히 일치하는 문서만 쓴다.
@@ -447,13 +522,17 @@ function renderCard(rec, st){
   const by = t => L.filter(l => l.t === t);
   const parts = by("part"), exs = by("ex"), rel = by("rel")[0], mean = by("mean")[0], origin = by("origin")[0];
   const q = (by("img")[0] || {}).q || head.word || rec.word;
+  const lg = langOf(rec), use = by("use")[0], canSay = !!window.speechSynthesis && !st.loading;
+  const sayBtn = (text, cls) => canSay ? h("button", {class: "btn small" + (cls ? " " + cls : ""), type: "button", onclick: () => speak(text, lg)}, "듣기") : null;
+  const DICT = {ko: "https://dict.naver.com/search.dict?query=", en: "https://en.dict.naver.com/#/search?query=", ja: "https://ja.dict.naver.com/#/search?query="};
   const enc = encodeURIComponent;
   const kids = [];
   if (rec.example) kids.push(h("span", {class: "tag"}, "예시 · 이렇게 풀이됩니다"));
   kids.push(h("div", {class: "hw"},
     h("span", {class: "w"}, head.word || rec.word),
     head.reading ? h("span", {class: "r"}, head.reading) : null,
-    head.pos ? h("span", {class: "pos"}, head.pos) : null));
+    head.pos ? h("span", {class: "pos"}, head.pos) : null,
+    L.length ? sayBtn(lg === "ko" ? rec.word : (head.word || rec.word)) : null));
   if (head.gloss) kids.push(h("p", {class: "gloss"}, head.gloss));
   if (head.en || head.ja) kids.push(h("p", {class: "tr"},
     head.en ? h("span", null, "English ", h("b", null, head.en)) : null,
@@ -466,9 +545,11 @@ function renderCard(rec, st){
       h("div", {class: "pr"}, p.reading || ""),
       h("div", {class: "ps"}, p.sense || ""),
       h("div", {class: "pn"}, p.note || ""))))));
+  if (use && use.text) kids.push(h("div", {class: "sec"}, h("h2", null, "쓰임새"), h("p", null, use.text)));
   if (origin) kids.push(h("div", {class: "sec"}, h("h2", null, "왜 이런 뜻인가"), h("p", null, origin.text)));
   if (exs.length) kids.push(h("div", {class: "sec"}, h("h2", null, "예문"),
-    exs.map(x => h("div", {class: "ex"}, x.src || "", x.ko ? h("small", null, x.ko) : null))));
+    exs.map(x => h("div", {class: "ex"}, lg !== "ko" && x.src ? sayBtn(x.src, "say") : null, x.src || "",
+      x.r ? h("small", null, x.r) : null, x.ko ? h("small", null, x.ko) : null))));
   if (rel && Array.isArray(rel.items) && rel.items.length) kids.push(h("div", {class: "sec"}, h("h2", null, "함께 볼 말"),
     h("p", null, rel.items.join(" · "))));
 
@@ -496,7 +577,7 @@ function renderCard(rec, st){
     }
     row.append(
       h("a", {href: "https://www.google.com/search?tbm=isch&q=" + enc(q), target: "_blank", rel: "noopener"}, "구글 이미지"),
-      h("a", {href: "https://dict.naver.com/search.dict?query=" + enc(rec.word), target: "_blank", rel: "noopener"}, "네이버 사전"));
+      h("a", {href: DICT[lg] + enc(rec.word), target: "_blank", rel: "noopener"}, {ko: "네이버 사전", en: "네이버 영어사전", ja: "네이버 일본어사전"}[lg]));
     sec.append(row);
     kids.push(sec);
     if (!rec.example) kids.push(h("div", {class: "row"},
@@ -542,7 +623,7 @@ function exportAnki(){
     const L = w.lines || [], head = L.find(l => l.t === "head") || {};
     const parts = L.filter(l => l.t === "part").map(p => `${p.piece} ${p.reading}: ${p.sense}`).join("<br>");
     const origin = (L.find(l => l.t === "origin") || {}).text || "";
-    const back = [head.gloss, head.reading, parts, origin, w.ctx ? "문장: " + w.ctx : ""].filter(Boolean).join("<br>");
+    const back = [head.gloss, head.reading, parts, origin, (L.find(l => l.t === "use") || {}).text, w.ctx ? "문장: " + w.ctx : ""].filter(Boolean).join("<br>");
     return clean(w.shown || w.word) + "\t" + clean(back);
   });
   const blob = new Blob([rows.join("\n")], {type: "text/tab-separated-values"});
@@ -552,7 +633,7 @@ function exportAnki(){
 
 /* ---------- 시작 ---------- */
 const EXAMPLE = {example: true, id: "ex", word: "원리", ctx: "", svg: "", lines: [
-  {t: "head", word: "원리 原理", reading: "[월리]", pos: "명사", gloss: "사물이나 현상이 그렇게 되는 근본 이치", en: "principle", ja: "原理(げんり)"},
+  {t: "head", lang: "ko", word: "원리 原理", reading: "[월리]", pos: "명사", gloss: "사물이나 현상이 그렇게 되는 근본 이치", en: "principle", ja: "原理(げんり)"},
   {t: "mean", text: "겉으로 보이는 여러 현상 밑에 깔려 있어서, 그것 하나로 나머지를 설명할 수 있는 바탕 규칙을 말한다."},
   {t: "part", piece: "原", reading: "근원 원 · ゲン / はら", sense: "근원, 처음, 들판", note: "厂(기슭) 아래에서 泉(샘)이 솟는 모양. 물이 처음 나오는 곳이라서 '근원'."},
   {t: "part", piece: "理", reading: "다스릴 리 · リ", sense: "결, 이치, 다스리다", note: "玉(옥)이 뜻, 里(리)가 소리. 옥을 결에 따라 다듬는 일에서 '결 → 이치'."},
@@ -569,8 +650,12 @@ $("form").addEventListener("submit", e => { e.preventDefault(); const v = $("q")
 $("exportBtn").addEventListener("click", exportAnki);
 
 $("key").value = getKey();
-$("speechLang").value = ls.get("dd.speechLang", "ko-KR");
-$("speechLang").addEventListener("change", e => ls.set("dd.speechLang", e.target.value));
+function setLang(v){
+  bookLang = v; ls.set("dd.speechLang", v);
+  for (const b of $("langs").querySelectorAll("button")) b.setAttribute("aria-checked", String(b.dataset.v === v));
+}
+$("langs").addEventListener("click", e => { const b = e.target.closest("button"); if (b) setLang(b.dataset.v); });
+setLang(bookLang);
 if (!getKey()) { $("setBox").open = true; say(COPY.no_key); }
 $("saveKey").addEventListener("click", async () => {
   const key = $("key").value.trim(), note = $("keyNote");
@@ -597,7 +682,7 @@ if (SR) {
   const off = () => { rec = null; mic.classList.remove("on"); mic.setAttribute("aria-pressed", "false"); mic.textContent = "말하기"; };
   mic.addEventListener("click", () => {
     if (rec) { rec.stop(); return; }
-    rec = new SR(); rec.lang = $("speechLang").value; rec.interimResults = true;
+    rec = new SR(); rec.lang = bookLang; rec.interimResults = true;
     $("q").value = "";
     rec.onresult = e => { let t = ""; for (const r of e.results) t += r[0].transcript; $("q").value = t; };
     rec.onerror = e => { if (e.error !== "no-speech" && e.error !== "aborted") say("음성을 듣지 못했습니다. 직접 입력해 주세요.", true); };
