@@ -11,14 +11,16 @@
 <link rel="apple-touch-icon" href="icon-180.png">
 <link rel="icon" href="icon-192.png">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&family=Noto+Serif+KR:wght@600;900&display=swap">
+<!-- 한국어 글꼴에는 한국에서 쓰는 한자만 들어 있다. 일본 신자체·간체·드문 글자는 아래 글꼴이 받는다. 화면을 막지 않게 나중에 불러온다. -->
+<link rel="stylesheet" media="print" onload="this.media='all'" href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@600&family=Noto+Serif+TC:wght@600&family=Noto+Sans+JP&family=Noto+Sans+TC&family=Noto+Sans+HK&display=swap">
 <style>
 /* 레이아웃: 한 손으로 쓰는 한 줄기 화면. 위에서부터 [찍기·말하기·입력] → [찾은 단어] → [풀이 카드] → [단어장] → [설정] */
 :root{
   --bg:#f4f6f2; --surface:#ffffff; --fg:#18211d; --muted:#5d6b64; --line:#d7ddd6;
   --accent:#1c6a50; --on-accent:#ffffff; --marker:#ffe169; --marker-fg:#2a2400; --warn:#a4372a;
   --pic-bg:#fbfcf8;
-  --serif:"Noto Serif KR","Apple SD Gothic Neo","Malgun Gothic",serif;
-  --sans:"Noto Sans KR","Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif;
+  --serif:"Noto Serif KR","Noto Serif JP","Noto Serif TC","Noto Sans HK","Apple SD Gothic Neo","Malgun Gothic",serif;
+  --sans:"Noto Sans KR","Noto Sans JP","Noto Sans TC","Noto Sans HK","Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif;
 }
 @media (prefers-color-scheme: dark){ :root{
   --bg:#121815; --surface:#1b2420; --fg:#e6ede8; --muted:#9aa9a1; --line:#2f3b35;
@@ -293,6 +295,8 @@ function parseLines(text, done){
   for (let l of rows) {
     l = l.trim().replace(/,$/, "");
     if (l[0] !== "{") continue;
+    // 부수 전용 문자(⼚ U+2F1A 등)는 글꼴에 없는 경우가 많아, 모양이 같은 일반 한자(厂)로 바꾼다.
+    l = l.replace(/[⺀-⿟]/g, ch => ch.normalize("NFKC"));
     try { out.push(JSON.parse(l)); } catch (_) {}
   }
   return out;
@@ -331,7 +335,8 @@ part 규칙:
 - 한자로 쓸 수 있는 말(한국어 한자어, 일본어, 중국어): 한자 한 글자마다 part 한 줄. piece=한자 한 글자, reading="한국어 훈음(예: 근원 원) · 일본어 음독/훈독", sense=핵심 뜻, note=부수와 글자 구성 원리(어떤 요소가 합쳐져 왜 그 뜻이 되는지) 한 문장.
 - 영어 등 서양 말: 접두사·어근·접미사마다 part 한 줄. piece=조각(예: bene-), reading=유래(예: 라틴어 bene), sense=뜻, note=같은 조각을 쓰는 다른 단어 2~3개와 뜻.
 - 더 쪼갤 수 없는 고유어·단순어: part를 생략하고 origin에 어원을 쓴다.
-en, ja는 표제어가 이미 그 언어면 빈 문자열.`;
+en, ja는 표제어가 이미 그 언어면 빈 문자열.
+글자 규칙: 한자와 부수는 폰에서 깨지지 않도록 일상적으로 쓰는 글자만 쓴다. 갑골문·금문에만 있는 옛 글자, 유니코드 확장 영역의 드문 글자, 부수 전용 기호는 쓰지 말고 "손을 뻗은 모양"처럼 말로 풀어 쓰거나 가장 가까운 흔한 한자로 대신한다.`;
 }
 function picPrompt(rec){
   const head = rec.lines.find(l => l.t === "head") || {};
