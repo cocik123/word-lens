@@ -405,11 +405,13 @@ async function photos(rec){
   const tries = [["ko", img.wiki], ["en", img.wiki_en]].filter(t => t[1]);
   for (const [lang, title] of tries) {
     try {
-      const u = `https://${lang}.wikipedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(title)}&gsrlimit=4&prop=pageimages%7Cinfo&inprop=url&piprop=thumbnail&pithumbsize=480&format=json&origin=*`;
+      // '검색'은 비슷한 글자의 엉뚱한 문서(염해 → 염해인)를 돌려주므로, 제목이 정확히 일치하는 문서만 쓴다.
+      // 넘겨주기(redirect)는 따라가고, 문서가 없거나 동음이의 안내 문서면 사진을 붙이지 않는다.
+      const u = `https://${lang}.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(title)}&redirects=1&prop=pageimages%7Cinfo%7Cpageprops%7Cdescription&ppprop=disambiguation&inprop=url&piprop=thumbnail&pithumbsize=480&format=json&origin=*`;
       const j = await (await fetch(u)).json();
-      const pages = Object.values((j.query || {}).pages || {}).sort((a, b) => a.index - b.index).filter(p => p.thumbnail).slice(0, 1);   // 둘째부터는 엉뚱한 문서가 섞여서 첫 결과만 쓴다
+      const pages = Object.values((j.query || {}).pages || {}).filter(p => !("missing" in p) && p.thumbnail && !p.pageprops).slice(0, 1);
       if (pages.length) {
-        rec.photos = pages.map(p => ({src: p.thumbnail.source, title: p.title, url: p.fullurl}));
+        rec.photos = pages.map(p => ({src: p.thumbnail.source, title: p.title + (p.description ? " · " + p.description : ""), url: p.fullurl}));
         save(rec); if (shown === rec) renderCard(rec);
         return;
       }
@@ -484,6 +486,8 @@ function renderCard(rec, st){
     else if (!rec.example) {
       if (rec.pic === "error") row.append(h("span", {class: "status err"}, rec.picErr || ""));
       row.append(h("button", {class: "btn small", type: "button", onclick: () => draw(rec, !!rec.svg)}, rec.svg ? "다시 그리기" : "그림 그리기"));
+      if ((rec.photos || []).length) row.append(h("button", {class: "btn small", type: "button",
+        onclick: () => { rec.photos = []; save(rec); renderCard(rec); }}, "사진 빼기"));
     }
     row.append(
       h("a", {href: "https://www.google.com/search?tbm=isch&q=" + enc(q), target: "_blank", rel: "noopener"}, "구글 이미지"),
